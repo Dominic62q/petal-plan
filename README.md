@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Petal & Plan
 
-## Getting Started
+Event-planning PWA (Next.js + Firebase). See `FRONTEND_UI_PLAYBOOK.md` in
+AssetTrackPro for the UI rules this project follows.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 (App Router), React 19, TypeScript
+- Tailwind v4 + shadcn/ui primitives (Petals & Plan tokens in `src/app/globals.css`)
+- TanStack Query for server state; Firebase Auth + Firestore backend
+- PWA via Serwist (`src/app/sw.ts`, offline fallback `/~offline`)
+
+## Develop
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev        # http://localhost:3000 (Turbopack; service worker disabled in dev)
+npm run build      # production build (webpack — required by the Serwist plugin)
+npm start          # serve the production build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Firebase setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Create a project at <https://console.firebase.google.com>.
+2. Add a **Web app**, copy its config.
+3. Fill `.env.local` (see `.env.example`).
+4. Enable **Authentication → Email/password** (and Phone if desired).
+5. Create a **Cloud Firestore named database** with the ID `petal-db` in production mode.
+6. Deploy the rules and indexes:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```bash
+   firebase deploy --only firestore
+   ```
 
-## Learn More
+## Environment variables
 
-To learn more about Next.js, take a look at the following resources:
+All client-side (`NEXT_PUBLIC_`) — Firebase web keys are public by design;
+security comes from Firestore rules.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Data model (Firestore)
 
-## Deploy on Vercel
+```
+users/{uid}                          — profile: displayName, createdAt
+events/{eventId}                     — ownerUid, title, date, time, status
+events/{eventId}/tasks/{taskId}      — title, group, priority, dueDate, done
+users/{uid}/standalone_tasks/{id}    — title, priority, dueDate, done
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Icons in `public/icons/` are generated placeholders — replace with final
+  brand art before release (keep the same filenames/sizes).
+- iOS install: Safari → Share → *Add to Home Screen* (no programmatic prompt).

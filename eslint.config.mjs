@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated service worker (Serwist webpack plugin output)
+    "public/sw.js",
   ]),
 ]);
 
