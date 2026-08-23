@@ -18,6 +18,25 @@ npm run build      # production build (webpack — required by the Serwist plugi
 npm start          # serve the production build
 ```
 
+## Deploy the frontend to Vercel
+
+The GitHub repository is ready to import into Vercel. Vercel hosts the Next.js
+frontend; Firebase continues to host Authentication, Firestore, and the
+deployed reminder Functions.
+
+1. Import `https://github.com/Dominic62q/petal-plan` into Vercel.
+2. Keep the project root at the repository root and use the Next.js framework preset.
+3. Keep the committed `vercel.json`. It forces Vercel to run `npm run build`,
+   which uses `next build --webpack` for the Serwist service-worker build.
+4. Add all variables from `.env.example` to the **Preview** and **Production**
+   environments in Vercel.
+5. Deploy the project, then add the generated Vercel domain (and any custom
+   domain) to Firebase Authentication → Settings → Authorized domains.
+
+Do not add Firebase Functions secrets or `VAPID_PRIVATE_KEY` to Vercel. The
+frontend only needs the public Firebase web configuration and
+`NEXT_PUBLIC_VAPID_PUBLIC_KEY`.
+
 ## Firebase setup
 
 1. Create a project at <https://console.firebase.google.com>.
@@ -43,6 +62,7 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
 ```
 
 ## Data model (Firestore)
@@ -56,6 +76,6 @@ users/{uid}/standalone_tasks/{id}    — title, priority, dueDate, done
 
 ## Notes
 
-- Icons in `public/icons/` are generated placeholders — replace with final
-  brand art before release (keep the same filenames/sizes).
+- The final Petal & Plan brand mark is used throughout the app, favicon, PWA
+  icons, Apple touch icon, and push notifications.
 - iOS install: Safari → Share → *Add to Home Screen* (no programmatic prompt).
