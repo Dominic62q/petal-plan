@@ -71,14 +71,14 @@ export function ServiceWorkerRegistrar() {
   return (
     <div
       role="status"
-      className="fixed inset-x-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-[60] mx-auto flex max-w-sm items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-lg"
+      className="fixed inset-x-4 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-[60] mx-auto flex max-w-sm items-center justify-between gap-3 rounded-2xl bg-foreground px-4 py-3 text-background shadow-float md:bottom-6"
     >
-      <p className="text-sm font-medium text-card-foreground">
+      <p className="text-sm font-semibold">
         New version available
       </p>
       <button
         type="button"
-        className="min-h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="min-h-9 rounded-lg bg-brand px-4 text-sm font-bold text-primary-foreground outline-none transition-transform active:scale-95 focus-visible:ring-4 focus-visible:ring-white/30"
         onClick={() => window.location.reload()}
       >
         Refresh

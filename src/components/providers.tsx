@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { MotionConfig } from "motion/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
 import { AuthProvider } from "@/components/auth-provider";
+import { ArrivalProvider } from "@/components/arrival";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -21,10 +23,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        {children}
-        <ServiceWorkerRegistrar />
-      </AuthProvider>
+      {/* Honour the OS "reduce motion" setting for every animation below. */}
+      <MotionConfig reducedMotion="user">
+        <AuthProvider>
+          <ArrivalProvider>
+            {children}
+            <ServiceWorkerRegistrar />
+          </ArrivalProvider>
+        </AuthProvider>
+      </MotionConfig>
     </QueryClientProvider>
   );
 }

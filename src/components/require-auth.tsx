@@ -43,9 +43,9 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
         {children}
       </div>
       {status === "loading" ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/70 backdrop-blur-md">
           <span
-            className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"
+            className="h-10 w-10 animate-spin rounded-full border-[3px] border-secondary border-t-primary"
             role="progressbar"
             aria-label="Checking your session"
           />

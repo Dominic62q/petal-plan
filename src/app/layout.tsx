@@ -1,16 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Manrope, Plus_Jakarta_Sans } from "next/font/google";
+import { Figtree } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { AppTabBar } from "@/components/app-tab-bar";
 
-const manrope = Manrope({
-  variable: "--font-manrope",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const jakarta = Plus_Jakarta_Sans({
+const figtree = Figtree({
   variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
@@ -36,22 +30,25 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#b7004f",
+  themeColor: "#d6336c",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${jakarta.variable} h-full antialiased`}
+      className={`${figtree.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <a
+          href="#main-content"
+          className="fixed top-3 left-3 z-[100] -translate-y-20 rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background outline-none transition-transform focus:translate-y-0 focus-visible:ring-4 focus-visible:ring-ring/40"
+        >
+          Skip to content
+        </a>
         <Providers>
-          {/* pb accounts for the tab bar + iOS home-indicator safe area */}
-          <main
-            id="main-content"
-            className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0 md:pl-64"
-          >
+          {/* Each screen's sheet pads for the docked tab bar itself, so it can run edge to edge. */}
+          <main id="main-content" tabIndex={-1} className="flex-1 outline-none md:pl-72">
             {children}
           </main>
           <AppTabBar />

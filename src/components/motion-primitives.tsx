@@ -1,7 +1,7 @@
 "use client";
 
-import { motion, useReducedMotion, type Transition } from "motion/react";
-import type { ReactNode } from "react";
+import { animate, motion, useMotionValue, useReducedMotion, useTransform, type Transition } from "motion/react";
+import { useEffect, type ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
 // Motion tokens — the spring vocabulary for the whole app. Tone: calm,
@@ -132,16 +132,17 @@ export function TapScale({
 
 export function AnimatedNumber({ value }: { value: number }) {
   const reduced = useReducedMotion();
-  if (reduced) return <span>{value}</span>;
-  return (
-    <motion.span
-      key={value}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={springs.rise}
-      className="inline-block tabular-nums"
-    >
-      {value}
-    </motion.span>
-  );
+  const motionValue = useMotionValue(reduced ? value : 0);
+  const rounded = useTransform(motionValue, (latest) => Math.round(latest));
+
+  useEffect(() => {
+    if (reduced) {
+      motionValue.set(value);
+      return;
+    }
+    const controls = animate(motionValue, value, { duration: 0.9, ease: [0.22, 1, 0.36, 1] });
+    return () => controls.stop();
+  }, [value, reduced, motionValue]);
+
+  return <motion.span className="inline-block tabular-nums">{rounded}</motion.span>;
 }

@@ -1,18 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, ArrowRight, CircleAlert, LoaderCircle, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, CircleAlert, Clock3, LoaderCircle, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { BrandLogo } from "@/components/brand-logo";
 import { RequireAuth } from "@/components/require-auth";
 import { useAuth } from "@/components/auth-provider";
 import { TapScale, springs } from "@/components/motion-primitives";
 import { createEvent } from "@/lib/data";
-import { formatLongDate, formatCountdown } from "@/lib/datetime";
+import { formatLongDate, formatCountdown, formatTime, todayIso } from "@/lib/datetime";
 import { currentTimeZone, parseReminderOffset, REMINDER_OPTIONS, type ReminderOptionValue } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,70 @@ interface WizardState {
   reminderOffset: ReminderOptionValue;
 }
 
+/** Live card that fills in as the form does. */
+function EventPreview({ state }: { state: WizardState }) {
+  const hasDate = Boolean(state.date);
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-brand p-5 text-primary-foreground">
+      <p className="relative text-xs font-bold tracking-wide text-white/80 uppercase">Preview</p>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.h3
+          key={state.title.trim() ? "title" : "placeholder"}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className={cn(
+            "relative mt-1.5 line-clamp-2 font-heading text-2xl leading-tight font-semibold tracking-[-0.035em]",
+            !state.title.trim() && "text-white/60",
+          )}
+        >
+          {state.title.trim() || "Your event name"}
+        </motion.h3>
+      </AnimatePresence>
+      <div className="relative mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-sm font-medium text-white/90">
+        <span className="inline-flex items-center gap-2">
+          <CalendarDays className="h-4 w-4 text-white/70" aria-hidden />
+          {hasDate ? formatLongDate(state.date) : "Choose a date"}
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <Clock3 className="h-4 w-4 text-white/70" aria-hidden />
+          {state.time ? formatTime(state.time) : "Set a time"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SuccessOverlay({ title }: { title: string }) {
+  return (
+    <motion.div
+      role="status"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-background px-8 text-center"
+    >
+      <BrandLogo variant="mark" size="xl" animated decorative />
+      <motion.h2
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...springs.rise, delay: 1 }}
+        className="mt-7 font-heading text-3xl font-semibold tracking-[-0.045em]"
+      >
+        Event created
+      </motion.h2>
+      <motion.p
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...springs.rise, delay: 1.1 }}
+        className="mt-2 max-w-xs text-sm text-muted-foreground"
+      >
+        {title} is on your calendar.
+      </motion.p>
+    </motion.div>
+  );
+}
+
 function WizardContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -32,6 +97,7 @@ function WizardContent() {
   const uid = user?.uid;
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState<1 | -1>(1);
+  const [created, setCreated] = useState(false);
   const [state, setState] = useState<WizardState>({
     title: "",
     date: "",
@@ -59,12 +125,19 @@ function WizardContent() {
         queryClient.invalidateQueries({ queryKey: ["all-tasks", uid] }),
         queryClient.invalidateQueries({ queryKey: ["calendar", uid] }),
       ]);
-      router.replace("/");
+      setCreated(true);
     },
     onError: (error) => {
       setServerError(error instanceof Error ? error.message : "Could not create the event. Try again.");
     },
   });
+
+  // Let the bloom play before heading back to the overview.
+  useEffect(() => {
+    if (!created) return;
+    const timer = window.setTimeout(() => router.replace("/"), 1900);
+    return () => window.clearTimeout(timer);
+  }, [created, router]);
 
   const validateCurrentStep = (): boolean => {
     const next: Partial<Record<keyof WizardState, string>> = {};
@@ -101,98 +174,84 @@ function WizardContent() {
     setStepIndex((current) => current - 1);
   };
 
-  return (
-    <div className="min-h-dvh bg-background">
-      <div
-        className="mx-auto grid min-h-dvh max-w-6xl gap-10 px-4 pb-8 sm:px-6 lg:grid-cols-[13rem_minmax(0,40rem)_15rem] lg:gap-14 lg:px-10"
-        style={{ paddingTop: "max(1.5rem, env(safe-area-inset-top))" }}
-      >
-        <aside className="hidden pt-4 lg:block" aria-label="Event setup steps">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">New planning file</p>
-          <h1 className="mt-3 font-heading text-2xl font-extrabold tracking-[-0.05em]">Create event</h1>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            Set the essentials now. The working plan can grow with the event.
-          </p>
-          <ol className="mt-10 space-y-5">
-            {STEPS.map((label, index) => (
-              <li key={label} className="flex items-start gap-3">
-                <motion.span
-                  aria-current={index === stepIndex ? "step" : undefined}
-                  animate={{
-                    backgroundColor: index < stepIndex ? "var(--primary)" : "transparent",
-                    color: index < stepIndex ? "var(--primary-foreground)" : index === stepIndex ? "var(--primary)" : "var(--muted-foreground)",
-                  }}
-                  transition={springs.pop}
-                  className={cn(
-                    "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[11px] font-bold tabular-nums",
-                    index <= stepIndex ? "border-primary" : "border-border",
-                  )}
-                >
-                  {index < stepIndex ? <Check className="h-3 w-3" aria-hidden /> : index + 1}
-                </motion.span>
-                <span>
-                  <span className={cn("block text-sm font-semibold", index <= stepIndex ? "text-foreground" : "text-muted-foreground")}>{label}</span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                    {index === 0 ? "Name the event" : index === 1 ? "Date and start time" : "Confirm the plan"}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        </aside>
+  const heading =
+    stepIndex === 0 ? "What are you planning?" : stepIndex === 1 ? "When is the day?" : "Review and create";
+  const lead =
+    stepIndex === 0
+      ? "Name the event clearly; tasks stay yours to define."
+      : stepIndex === 1
+        ? "Choose the date and a useful starting time. You can add the full run of show later."
+        : "Check the essentials, then open a clean event workspace for your own tasks and calendar.";
+  const reviewRows: Array<[string, string, boolean?]> = [
+    ["Name", state.title],
+    ["When", `${formatLongDate(state.date)} · ${formatTime(state.time)}`],
+    ["Countdown", formatCountdown(state.date), true],
+    ["Reminder", REMINDER_OPTIONS.find((option) => option.value === state.reminderOffset)?.label ?? "None"],
+  ];
 
-        <main className="flex min-w-0 flex-col pt-1 lg:pt-12">
-          <header className="border-b border-border pb-5">
-            <div className="flex items-center justify-between gap-4 lg:hidden">
-              <button
-                type="button"
-                onClick={goBack}
-                aria-label="Go back"
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                <ArrowLeft className="h-4 w-4" aria-hidden />
-              </button>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Create event</p>
-              <span className="text-xs font-semibold tabular-nums text-muted-foreground">{stepIndex + 1} / {STEPS.length}</span>
-            </div>
-            <div className="mt-4 flex items-end justify-between gap-4 lg:mt-0">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">{STEPS[stepIndex]}</p>
-                <h2 className="mt-2 font-heading text-3xl font-extrabold leading-[1.05] tracking-[-0.055em] sm:text-4xl">
-                  {stepIndex === 0 ? "What are you planning?" : stepIndex === 1 ? "When is the day?" : "Ready to start the plan?"}
-                </h2>
-              </div>
-              <span className="hidden text-xs font-semibold tabular-nums text-muted-foreground lg:inline">{stepIndex + 1} / {STEPS.length}</span>
-            </div>
-            <p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-              {stepIndex === 0
-                ? "Name the event clearly; tasks stay yours to define."
-                : stepIndex === 1
-                  ? "Choose the date and a useful starting time. You can add the full run of show later."
-                  : "Check the essentials, then open a clean event workspace for your own tasks and calendar."}
-            </p>
-            <div className="mt-5 h-1 overflow-hidden rounded-full bg-border lg:hidden">
-              <motion.div
-                className="h-full rounded-full bg-primary"
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-brand">
+      <header
+        className="relative mx-auto w-full max-w-xl px-5 pb-9 text-primary-foreground"
+        style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
+      >
+        <div className="flex items-center justify-between gap-4">
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label={stepIndex === 0 ? "Close" : "Go back"}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/25 outline-none transition-transform active:scale-90 focus-visible:ring-4 focus-visible:ring-white/40"
+          >
+            {stepIndex === 0 ? <X className="h-5 w-5" aria-hidden /> : <ArrowLeft className="h-5 w-5" aria-hidden />}
+          </button>
+          <div
+            className="flex items-center gap-2"
+            role="progressbar"
+            aria-valuemin={1}
+            aria-valuemax={STEPS.length}
+            aria-valuenow={stepIndex + 1}
+            aria-label={`Step ${stepIndex + 1} of ${STEPS.length}: ${STEPS[stepIndex]}`}
+          >
+            {STEPS.map((label, index) => (
+              <motion.span
+                key={label}
+                className="h-2.5 rounded-full bg-white"
                 initial={false}
-                animate={{ width: `${((stepIndex + 1) / STEPS.length) * 100}%` }}
+                animate={{ width: index === stepIndex ? 28 : 10, opacity: index <= stepIndex ? 1 : 0.4 }}
                 transition={springs.rise}
               />
-            </div>
-          </header>
+            ))}
+          </div>
+          <span className="w-11" aria-hidden />
+        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={stepIndex}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6, transition: { duration: 0.12 } }}
+            transition={springs.rise}
+            className="mt-6"
+          >
+            <h1 className="font-heading text-[2rem] leading-[1.05] font-bold tracking-tight">{heading}</h1>
+            <p className="mt-2 text-base leading-6 font-semibold text-white/85">{lead}</p>
+          </motion.div>
+        </AnimatePresence>
+      </header>
 
-          <div className="relative mt-8 flex-1">
+      <div className="relative min-h-0 flex-1 rounded-t-3xl bg-card shadow-[0_-12px_40px_-16px_rgb(120_0_50/0.35)]">
+        <div className="mx-auto flex h-full max-w-xl flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-7 pb-4">
             <AnimatePresence mode="wait" custom={direction} initial={false}>
               <motion.div
                 key={stepIndex}
-                custom={direction}
                 initial={{ opacity: 0, x: direction * 32 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: direction * -24, transition: { duration: 0.14 } }}
                 transition={springs.surface}
               >
                 {stepIndex === 0 ? (
-                  <section aria-label="Basics" className="space-y-8">
+                  <section aria-label="Basics" className="space-y-6">
                     <div className="space-y-2">
                       <Label htmlFor="event-title">Event name</Label>
                       <Input
@@ -200,36 +259,37 @@ function WizardContent() {
                         placeholder="Sarah & James' Wedding"
                         value={state.title}
                         onChange={(event) => setState((current) => ({ ...current, title: event.target.value }))}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            goNext();
+                          }
+                        }}
                         aria-invalid={Boolean(errors.title)}
                         autoFocus
-                        className="h-12 rounded-md text-base"
+                        className="h-14 text-lg"
                       />
-                      {errors.title ? <p className="text-xs text-destructive">{errors.title}</p> : null}
+                      {errors.title ? <p className="text-sm font-bold text-destructive">{errors.title}</p> : null}
                     </div>
-                    <div className="border-y border-border py-5">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Name it clearly</p>
-                      <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
-                        Use the name your team will recognize. Tasks and dates can be added after the event exists.
-                      </p>
-                    </div>
+                    <EventPreview state={state} />
                   </section>
                 ) : null}
 
                 {stepIndex === 1 ? (
-                  <section aria-label="Details" className="space-y-8">
-                    <div className="grid gap-6 sm:grid-cols-2">
+                  <section aria-label="Details" className="space-y-6">
+                    <div className="grid gap-5 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label htmlFor="event-date">Event date</Label>
                         <Input
                           id="event-date"
                           type="date"
                           value={state.date}
-                          min={new Date().toISOString().slice(0, 10)}
+                          min={todayIso()}
                           onChange={(event) => setState((current) => ({ ...current, date: event.target.value }))}
                           aria-invalid={Boolean(errors.date)}
-                          className="h-12 rounded-md text-base"
+                          className="h-14 text-base"
                         />
-                        {errors.date ? <p className="text-xs text-destructive">{errors.date}</p> : null}
+                        {errors.date ? <p className="text-sm font-bold text-destructive">{errors.date}</p> : null}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="event-time">Start time</Label>
@@ -239,9 +299,9 @@ function WizardContent() {
                           value={state.time}
                           onChange={(event) => setState((current) => ({ ...current, time: event.target.value }))}
                           aria-invalid={Boolean(errors.time)}
-                          className="h-12 rounded-md text-base"
+                          className="h-14 text-base"
                         />
-                        {errors.time ? <p className="text-xs text-destructive">{errors.time}</p> : null}
+                        {errors.time ? <p className="text-sm font-bold text-destructive">{errors.time}</p> : null}
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -250,7 +310,7 @@ function WizardContent() {
                         id="event-reminder"
                         value={state.reminderOffset}
                         onChange={(event) => setState((current) => ({ ...current, reminderOffset: event.target.value as ReminderOptionValue }))}
-                        className="h-12 w-full rounded-md border border-input bg-card px-3 text-base focus-visible:outline-2 focus-visible:outline-ring"
+                        className="h-14 w-full rounded-2xl border border-input bg-card px-4 text-base outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/25"
                       >
                         {REMINDER_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
@@ -258,43 +318,29 @@ function WizardContent() {
                       </select>
                       <p className="text-xs text-muted-foreground">Turn on notifications in Account to receive it.</p>
                     </div>
-                    <div className="border-y border-border py-5">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Planning note</p>
-                      <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
-                        This is the anchor for your event. Add tasks to it, or create personal tasks for any date.
-                      </p>
-                    </div>
+                    <EventPreview state={state} />
                   </section>
                 ) : null}
 
                 {stepIndex === 2 ? (
-                  <section aria-label="Review" className="space-y-7">
-                    <dl className="divide-y divide-border border-y border-border text-sm">
-                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...springs.rise, delay: 0.03 }} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-4">
-                        <dt className="text-xs text-muted-foreground">Name</dt>
-                        <dd className="font-semibold">{state.title}</dd>
-                      </motion.div>
-                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...springs.rise, delay: 0.13 }} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-4">
-                        <dt className="text-xs text-muted-foreground">When</dt>
-                        <dd className="font-semibold">{formatLongDate(state.date)} · {state.time}</dd>
-                      </motion.div>
-                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...springs.rise, delay: 0.18 }} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-4">
-                        <dt className="text-xs text-muted-foreground">Countdown</dt>
-                        <dd className="font-semibold text-primary">{formatCountdown(state.date)}</dd>
-                      </motion.div>
-                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...springs.rise, delay: 0.23 }} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-4">
-                        <dt className="text-xs text-muted-foreground">Reminder</dt>
-                        <dd className="font-semibold">{REMINDER_OPTIONS.find((option) => option.value === state.reminderOffset)?.label}</dd>
-                      </motion.div>
+                  <section aria-label="Review" className="space-y-5">
+                    <EventPreview state={state} />
+                    <dl className="divide-y divide-card overflow-hidden rounded-3xl bg-secondary/60 text-sm">
+                      {reviewRows.map(([label, value, accent], index) => (
+                        <motion.div
+                          key={label}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ ...springs.rise, delay: 0.05 + index * 0.06 }}
+                          className="grid grid-cols-[6rem_minmax(0,1fr)] gap-4 px-4 py-3.5"
+                        >
+                          <dt className="font-bold text-muted-foreground">{label}</dt>
+                          <dd className={cn("font-semibold", accent && "text-primary")}>{value}</dd>
+                        </motion.div>
+                      ))}
                     </dl>
-                    <div className="border-l-2 border-primary bg-secondary/35 px-4 py-4">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">What happens next</p>
-                      <p className="mt-2 text-sm leading-6 text-foreground">
-                        Your event opens clean, ready for the tasks you choose to add.
-                      </p>
-                    </div>
                     {serverError ? (
-                      <p role="alert" className="border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      <p role="alert" className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-bold text-destructive">
                         <CircleAlert className="mr-1 inline h-4 w-4" aria-hidden />
                         {serverError}
                       </p>
@@ -305,39 +351,26 @@ function WizardContent() {
             </AnimatePresence>
           </div>
 
-          <footer className="mt-8 flex items-center gap-3 border-t border-border pt-5">
-            <Button variant="outline" onClick={goBack} className="min-h-10 flex-1 rounded-md">
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back
-            </Button>
-            <TapScale amount={0.97} className="flex-[2]">
-              <Button onClick={() => goNext()} disabled={create.isPending} className="min-h-10 w-full rounded-md text-base font-semibold">
+          <footer
+            className="flex items-center gap-3 px-5 pt-3"
+            style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+          >
+            <TapScale amount={0.97} className="flex-1">
+              <Button onClick={() => goNext()} disabled={create.isPending || created} className="h-14 w-full text-base font-semibold">
                 {create.isPending ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                  <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden />
                 ) : stepIndex === STEPS.length - 1 ? (
-                  <Check className="h-4 w-4" aria-hidden />
+                  <Check className="h-5 w-5" aria-hidden />
                 ) : null}
                 {stepIndex === STEPS.length - 1 ? "Create event" : "Continue"}
-                {stepIndex < STEPS.length - 1 ? <ArrowRight className="h-4 w-4" aria-hidden /> : null}
+                {stepIndex < STEPS.length - 1 ? <ArrowRight className="h-5 w-5" aria-hidden /> : null}
               </Button>
             </TapScale>
           </footer>
-        </main>
-
-        <aside className="hidden pt-12 xl:block" aria-label="Event preview">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Live preview</p>
-          <div className="mt-4 border-y border-border py-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Event</p>
-            <p className="mt-2 truncate font-heading text-lg font-extrabold tracking-[-0.03em]">{state.title || "Your event name"}</p>
-          </div>
-          <div className="border-b border-border py-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">When</p>
-            <p className="mt-2 text-sm font-semibold">{state.date ? formatLongDate(state.date) : "Choose a date"}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{state.time || "Set a start time"}</p>
-          </div>
-          <p className="mt-5 text-xs leading-5 text-muted-foreground">Add tasks when you know what needs doing.</p>
-        </aside>
+        </div>
       </div>
+
+      <AnimatePresence>{created ? <SuccessOverlay title={state.title.trim()} /> : null}</AnimatePresence>
     </div>
   );
 }

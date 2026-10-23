@@ -1,23 +1,35 @@
+"use client";
+
+import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 type BrandLogoProps = {
   variant?: "full" | "mark";
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
+  /** Light mark on a dark/brand surface. */
   inverted?: boolean;
   decorative?: boolean;
+  /** Petals bloom one after another — used for the arrival moment. */
+  animated?: boolean;
   className?: string;
 };
 
 const markSizes = {
-  sm: "h-8 w-8",
-  md: "h-10 w-10",
-  lg: "h-14 w-14",
+  sm: "h-9 w-9",
+  md: "h-11 w-11",
+  lg: "h-16 w-16",
+  xl: "h-24 w-24",
 } as const;
 
-function BrandMark({ inverted, decorative, size, className }: Omit<BrandLogoProps, "variant">) {
-  const surface = inverted ? "var(--background)" : "var(--primary)";
-  const petal = inverted ? "var(--foreground)" : "var(--primary-foreground)";
-  const center = inverted ? "var(--primary)" : "#efb35f";
+export const PETAL_PATH =
+  "M32 8.5c-7.3 1.2-12 5.9-12 12.2 0 6.2 4.8 10.6 12 11.3 7.2 -0.7 12 -5.1 12 -11.3 0 -6.3 -4.7 -11 -12 -12.2Z";
+export const ROTATIONS = [0, 90, 180, 270];
+
+function BrandMark({ inverted, decorative, animated, size, className }: Omit<BrandLogoProps, "variant">) {
+  const surface = inverted ? "white" : "var(--primary)";
+  const petal = inverted ? "var(--primary)" : "white";
+  const center = inverted ? "var(--primary)" : "white";
+  const check = inverted ? "white" : "var(--primary)";
 
   return (
     <svg
@@ -28,33 +40,66 @@ function BrandMark({ inverted, decorative, size, className }: Omit<BrandLogoProp
       aria-hidden={decorative || undefined}
       aria-label={decorative ? undefined : "Petal & Plan"}
     >
-      <rect x="1" y="1" width="62" height="62" rx="18" fill={surface} />
+      <rect x="1" y="1" width="62" height="62" rx="19" fill={surface} />
       <g fill={petal}>
-        <path d="M32 8.5c-7.3 1.2-12 5.9-12 12.2 0 6.2 4.8 10.6 12 11.3 7.2 -0.7 12 -5.1 12 -11.3 0 -6.3 -4.7 -11 -12 -12.2Z" />
-        <path d="M32 8.5c-7.3 1.2-12 5.9-12 12.2 0 6.2 4.8 10.6 12 11.3 7.2 -0.7 12 -5.1 12 -11.3 0 -6.3 -4.7 -11 -12 -12.2Z" transform="rotate(90 32 32)" />
-        <path d="M32 8.5c-7.3 1.2-12 5.9-12 12.2 0 6.2 4.8 10.6 12 11.3 7.2 -0.7 12 -5.1 12 -11.3 0 -6.3 -4.7 -11 -12 -12.2Z" transform="rotate(180 32 32)" />
-        <path d="M32 8.5c-7.3 1.2-12 5.9-12 12.2 0 6.2 4.8 10.6 12 11.3 7.2 -0.7 12 -5.1 12 -11.3 0 -6.3 -4.7 -11 -12 -12.2Z" transform="rotate(270 32 32)" />
+        {ROTATIONS.map((rotation, index) => (
+          // Rotation lives on the <g>: motion's scale would override a transform on the path itself.
+          <g key={rotation} transform={`rotate(${rotation} 32 32)`}>
+            <motion.path
+              d={PETAL_PATH}
+              style={{ transformOrigin: "32px 32px", transformBox: "view-box" }}
+              initial={animated ? { scale: 0, opacity: 0 } : false}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 180, damping: 14, delay: animated ? 0.25 + index * 0.14 : 0 }}
+            />
+          </g>
+        ))}
       </g>
-      <circle cx="32" cy="32" r="6.5" fill={center} />
-      <path d="m28.9 32.1 2.1 2.1 4.3-4.6" stroke={surface} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <motion.circle
+        cx="32"
+        cy="32"
+        r="6.5"
+        fill={center}
+        initial={animated ? { scale: 0 } : false}
+        animate={{ scale: 1 }}
+        style={{ transformOrigin: "32px 32px", transformBox: "view-box" }}
+        transition={{ type: "spring", stiffness: 300, damping: 14, delay: animated ? 0.95 : 0 }}
+      />
+      <motion.path
+        d="m28.9 32.1 2.1 2.1 4.3-4.6"
+        stroke={check}
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        initial={animated ? { pathLength: 0 } : false}
+        animate={{ pathLength: 1 }}
+        transition={{ duration: 0.3, delay: animated ? 1.15 : 0 }}
+      />
     </svg>
   );
 }
 
-export function BrandLogo({ variant = "full", size = "md", inverted = false, decorative = false, className }: BrandLogoProps) {
+export function BrandLogo({
+  variant = "full",
+  size = "md",
+  inverted = false,
+  decorative = false,
+  animated = false,
+  className,
+}: BrandLogoProps) {
   if (variant === "mark") {
     return (
       <span className="inline-flex shrink-0">
-        <BrandMark size={size} inverted={inverted} decorative={decorative} className={className} />
+        <BrandMark size={size} inverted={inverted} decorative={decorative} animated={animated} className={className} />
       </span>
     );
   }
 
   return (
     <span className={cn("inline-flex items-center gap-2.5", className)}>
-      <BrandMark size={size} inverted={inverted} decorative />
-      <span className={cn("font-heading text-[15px] font-extrabold tracking-[-0.03em]", inverted ? "text-background" : "text-foreground")}>
-        Petal <span className={inverted ? "text-background/55" : "text-primary/65"}>&amp;</span> Plan
+      <BrandMark size={size} inverted={inverted} decorative animated={animated} />
+      <span className={cn("font-heading text-lg font-semibold tracking-[-0.035em]", inverted ? "text-white" : "text-foreground")}>
+        Petal <span className={inverted ? "text-white/70" : "text-primary"}>&amp;</span> Plan
       </span>
     </span>
   );

@@ -3,76 +3,29 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { Eye, EyeOff, LoaderCircle, Lock, Mail, User } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { useArrival } from "@/components/arrival";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { springs } from "@/components/motion-primitives";
+import { cn } from "@/lib/utils";
 
 type Mode = "signin" | "signup";
-type ArrivalPhase = "idle" | "arriving" | "leaving";
 
-function BrandArrival({
-  phase,
-  reduced,
-}: {
-  phase: Exclude<ArrivalPhase, "idle">;
-  reduced: boolean | null;
-}) {
-  const leaving = phase === "leaving";
-  const motionDisabled = Boolean(reduced);
-
+function FieldIcon({ children }: { children: React.ReactNode }) {
   return (
-    <motion.div
-      role="status"
-      aria-live="polite"
-      aria-label="Opening Petal and Plan"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: motionDisabled ? 0.1 : 0.36, ease: "easeOut" }}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground px-6 text-background"
-    >
-      <motion.div
-        initial={motionDisabled ? { opacity: 0 } : { opacity: 0, y: 20 }}
-        animate={leaving ? (motionDisabled ? { opacity: 0 } : { opacity: 0, y: -12 }) : { opacity: 1, y: 0 }}
-        transition={{ duration: motionDisabled ? 0.1 : 0.48, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-sm text-center"
-      >
-        <motion.div
-          initial={motionDisabled ? { opacity: 0 } : { opacity: 0, scale: 0.72, rotate: -18 }}
-          animate={leaving ? { opacity: 0 } : { opacity: 1, scale: 1, rotate: 0 }}
-          transition={{ duration: motionDisabled ? 0.1 : 0.52, delay: motionDisabled ? 0 : 0.08, ease: [0.22, 1, 0.36, 1] }}
-          className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-background text-foreground"
-        >
-          <BrandLogo variant="mark" size="lg" inverted decorative />
-        </motion.div>
-        <p className="mt-7 text-[10px] font-bold uppercase tracking-[0.24em] text-background/50">Your planning workspace</p>
-        <div className="mt-3 overflow-hidden">
-          <motion.h1
-            initial={motionDisabled ? { opacity: 0 } : { opacity: 0, y: "110%" }}
-            animate={leaving ? (motionDisabled ? { opacity: 0 } : { opacity: 0, y: "-20%" }) : { opacity: 1, y: 0 }}
-            transition={{ duration: motionDisabled ? 0.1 : 0.62, delay: motionDisabled ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="font-heading text-5xl font-extrabold tracking-[-0.075em] sm:text-6xl"
-          >
-            Petal <span className="text-background/55">&amp;</span> Plan
-          </motion.h1>
-        </div>
-        <motion.div
-          initial={{ scaleX: 0, opacity: 0 }}
-          animate={leaving ? { scaleX: 0.7, opacity: 0 } : { scaleX: 1, opacity: 1 }}
-          transition={{ duration: motionDisabled ? 0.1 : 0.5, delay: motionDisabled ? 0 : 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="mx-auto mt-6 h-px w-20 origin-center bg-background/40"
-        />
-      </motion.div>
-    </motion.div>
+    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-muted-foreground" aria-hidden>
+      {children}
+    </span>
   );
 }
 
-
 export default function LoginPage() {
   const { signIn, signUp, status } = useAuth();
+  const arrival = useArrival();
   const router = useRouter();
   const reduced = useReducedMotion();
   const [mode, setMode] = useState<Mode>("signin");
@@ -83,7 +36,6 @@ export default function LoginPage() {
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [arrivalPhase, setArrivalPhase] = useState<ArrivalPhase>("idle");
 
   const friendlyError = (code: string): string => {
     if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
@@ -118,15 +70,10 @@ export default function LoginPage() {
     try {
       if (mode === "signup") await signUp(name.trim(), email.trim(), password);
       else await signIn(email.trim(), password);
-      setArrivalPhase("arriving");
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, reduced ? 140 : 2_080);
+      await arrival.play({
+        name: mode === "signup" ? name.trim().split(" ")[0] : undefined,
+        navigate: () => router.replace("/"),
       });
-      setArrivalPhase("leaving");
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, reduced ? 100 : 420);
-      });
-      router.replace("/");
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
       setFormError(friendlyError(code));
@@ -134,51 +81,88 @@ export default function LoginPage() {
     }
   };
 
+  const switchMode = (next: Mode) => {
+    if (next === mode) return;
+    setMode(next);
+    setFieldError(null);
+    setShowPassword(false);
+    setFormError("");
+  };
+
   const stagger = (index: number) =>
-    reduced ? {} : { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { ...springs.rise, delay: index * 0.07 } };
+    reduced ? {} : { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { ...springs.rise, delay: 0.25 + index * 0.07 } };
 
   return (
-    <div className="grid min-h-dvh bg-background lg:grid-cols-[minmax(0,1.15fr)_minmax(26rem,.85fr)]">
-      <aside className="relative hidden min-h-dvh flex-col bg-foreground px-10 py-10 text-background lg:flex xl:px-16">
-        <div className="flex items-center gap-3">
-          <BrandLogo size="sm" inverted />
+    <div className="relative grid min-h-dvh grid-rows-[auto_1fr] bg-brand lg:grid-rows-none lg:grid-cols-[minmax(0,1.1fr)_minmax(28rem,.9fr)] lg:bg-none">
+      {/* Hero — full-bleed gradient on phones, a side panel on desktop. */}
+      <section className="relative flex flex-col overflow-hidden px-6 pt-[max(2.5rem,env(safe-area-inset-top))] pb-14 text-white lg:min-h-dvh lg:justify-between lg:bg-brand lg:px-14 lg:py-12">
+          <motion.div
+          initial={reduced ? false : { opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={springs.rise}
+          className="relative"
+        >
+          <BrandLogo size="md" inverted />
+        </motion.div>
+        <div className="relative mt-9 max-w-md lg:mt-0 lg:mb-10">
+          <motion.h1
+            initial={reduced ? false : { opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...springs.surface, delay: 0.1 }}
+            className="font-heading text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.055em] lg:text-6xl"
+          >
+            Events and tasks,
+            <br />
+            in one place.
+          </motion.h1>
+          <motion.p
+            initial={reduced ? false : { opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...springs.surface, delay: 0.2 }}
+            className="mt-4 hidden max-w-sm text-base leading-7 text-white/80 sm:block"
+          >
+            Sign in to see what is coming up and what needs doing.
+          </motion.p>
         </div>
+      </section>
 
-        <div className="mt-auto max-w-xl pb-8">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-background/55">Events · tasks · dates</p>
-          <h1 className="mt-5 max-w-2xl font-heading text-5xl font-extrabold leading-[0.96] tracking-[-0.07em] xl:text-6xl">
-            Make the work behind the day visible.
-          </h1>
-          <p className="mt-6 max-w-lg text-base leading-7 text-background/65">
-            Create the event, decide what needs doing, and keep personal tasks on their own dates. Nothing gets invented for you.
-          </p>
-          <dl className="mt-10 max-w-lg divide-y divide-background/15 border-y border-background/15">
-            <div className="grid grid-cols-[5rem_1fr] gap-5 py-4">
-              <dt className="text-xs font-bold uppercase tracking-[0.16em] text-background/45">01</dt>
-              <dd className="text-sm font-semibold">Create a clear event home</dd>
+      {/* Form — a sheet that slides up over the hero. */}
+      <main className="relative z-10 flex items-stretch justify-center lg:items-center lg:bg-background">
+        <motion.div
+          initial={reduced ? false : { y: 70, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ ...springs.surface, delay: 0.15 }}
+          className="-mt-8 w-full rounded-t-3xl bg-background px-6 pt-8 pb-[max(2.5rem,env(safe-area-inset-bottom))] shadow-float sm:px-10 lg:mt-0 lg:max-w-md lg:rounded-none lg:bg-transparent lg:px-8 lg:py-10 lg:shadow-none"
+        >
+          <div className="mx-auto w-full max-w-md">
+            <div role="tablist" aria-label="Account" className="relative grid grid-cols-2 rounded-2xl bg-secondary p-1">
+              {(["signin", "signup"] as const).map((option) => {
+                const selected = mode === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => switchMode(option)}
+                    className={cn(
+                      "relative z-10 h-10 rounded-xl text-sm font-bold transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring/30",
+                      selected ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {selected ? (
+                      <motion.span
+                        layoutId="auth-tab"
+                        className="absolute inset-0 -z-10 rounded-xl bg-card shadow-soft"
+                        transition={springs.rise}
+                      />
+                    ) : null}
+                    {option === "signin" ? "Sign in" : "Create account"}
+                  </button>
+                );
+              })}
             </div>
-            <div className="grid grid-cols-[5rem_1fr] gap-5 py-4">
-              <dt className="text-xs font-bold uppercase tracking-[0.16em] text-background/45">02</dt>
-              <dd className="text-sm font-semibold">Add only the tasks that matter</dd>
-            </div>
-            <div className="grid grid-cols-[5rem_1fr] gap-5 py-4">
-              <dt className="text-xs font-bold uppercase tracking-[0.16em] text-background/45">03</dt>
-              <dd className="text-sm font-semibold">See the dates at a glance</dd>
-            </div>
-          </dl>
-        </div>
 
-        <p className="text-xs text-background/45">Your planning workspace, kept intentionally simple.</p>
-      </aside>
-
-      <main className="flex min-h-dvh items-center justify-center px-5 py-10 sm:px-8" style={{ paddingTop: "max(2.5rem, env(safe-area-inset-top))" }}>
-        <div className="w-full max-w-md">
-          <motion.div {...stagger(0)} className="mb-8 flex items-center gap-3 lg:hidden">
-            <BrandLogo size="sm" />
-          </motion.div>
-
-          <header className="border-b border-border pb-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Private planning workspace</p>
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={mode}
@@ -186,112 +170,115 @@ export default function LoginPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={reduced ? undefined : { opacity: 0, y: -8, transition: { duration: 0.13 } }}
                 transition={springs.rise}
+                className="mt-7"
               >
-                <h2 className="mt-3 font-heading text-3xl font-extrabold tracking-[-0.055em] sm:text-4xl">
-                  {mode === "signin" ? "Welcome back" : "Start a new workspace"}
+                <h2 className="font-heading text-3xl font-semibold tracking-[-0.045em]">
+                  {mode === "signin" ? "Welcome back" : "Let’s get started"}
                 </h2>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  {mode === "signin" ? "Sign in to pick up where your last plan left off." : "Create an account for your events, tasks, and dates."}
+                <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+                  {mode === "signin" ? "Sign in to pick up where your last plan left off." : "Create an account for your events, tasks and dates."}
                 </p>
               </motion.div>
             </AnimatePresence>
-          </header>
 
-          <form
-            className="mt-7 space-y-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submit();
-            }}
-          >
-            <AnimatePresence initial={false}>
-              {mode === "signup" ? (
-                <motion.div
-                  key="name-field"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0, transition: { duration: 0.15 } }}
-                  transition={springs.rise}
-                  className="overflow-hidden"
-                >
-                  <div {...stagger(1)} className="space-y-2 pb-1">
-                    <Label htmlFor="name">Your name</Label>
-                    <Input id="name" autoComplete="name" placeholder="Sarah Mensah" value={name} onChange={(event) => setName(event.target.value)} aria-invalid={fieldError?.field === "name"} className="h-11 rounded-md" />
-                    {fieldError?.field === "name" ? <p className="text-xs text-destructive">{fieldError.message}</p> : null}
-                  </div>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-
-            <motion.div {...stagger(mode === "signin" ? 1 : 2)} className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={fieldError?.field === "email"} className="h-11 rounded-md" />
-              {fieldError?.field === "email" ? <p className="text-xs text-destructive">{fieldError.message}</p> : null}
-            </motion.div>
-
-            <motion.div {...stagger(mode === "signin" ? 2 : 3)} className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  aria-invalid={fieldError?.field === "password"}
-                  className="h-11 rounded-md pr-11"
-                />
-                <button
-                  type="button"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  aria-pressed={showPassword}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => setShowPassword((visible) => !visible)}
-                  className="absolute inset-y-0 right-1 flex w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
-                </button>
-              </div>
-              {fieldError?.field === "password" ? <p className="text-xs text-destructive">{fieldError.message}</p> : null}
-            </motion.div>
-
-            <AnimatePresence>
-              {formError ? (
-                <motion.p key="form-error" role="alert" initial={reduced ? false : { opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-                  {formError}
-                </motion.p>
-              ) : null}
-            </AnimatePresence>
-
-            <motion.div {...stagger(mode === "signin" ? 3 : 4)}>
-              <Button type="submit" disabled={busy || status === "unconfigured"} className="min-h-11 w-full rounded-md text-base font-semibold">
-                {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                {mode === "signin" ? "Sign in" : "Create account"}
-              </Button>
-            </motion.div>
-          </form>
-
-          {status === "unconfigured" ? <p role="alert" className="mt-4 border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">Backend isn&apos;t connected yet — add your Firebase keys to .env.local and restart.</p> : null}
-
-          <motion.p {...stagger(5)} className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "signin" ? "New to Petal & Plan? " : "Already have an account? "}
-            <button
-              type="button"
-              className="font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-              onClick={() => {
-                setMode(mode === "signin" ? "signup" : "signin");
-                setFieldError(null);
-                setShowPassword(false);
-                setFormError("");
+            <form
+              className="mt-6 space-y-4"
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submit();
               }}
             >
-              {mode === "signin" ? "Create an account" : "Sign in"}
-            </button>
-          </motion.p>
-        </div>
+              <AnimatePresence initial={false}>
+                {mode === "signup" ? (
+                  <motion.div
+                    key="name-field"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0, transition: { duration: 0.15 } }}
+                    transition={springs.rise}
+                    className="overflow-hidden"
+                  >
+                    <div className="space-y-2 pb-1">
+                      <Label htmlFor="name">Your name</Label>
+                      <div className="relative">
+                        <FieldIcon><User className="h-[18px] w-[18px]" /></FieldIcon>
+                        <Input id="name" autoComplete="name" placeholder="Sarah Mensah" value={name} onChange={(event) => setName(event.target.value)} aria-invalid={fieldError?.field === "name"} className="pl-11" />
+                      </div>
+                      {fieldError?.field === "name" ? <p role="alert" className="text-xs font-medium text-destructive">{fieldError.message}</p> : null}
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+
+              <motion.div {...stagger(1)} className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <FieldIcon><Mail className="h-[18px] w-[18px]" /></FieldIcon>
+                  <Input id="email" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={fieldError?.field === "email"} className="pl-11" />
+                </div>
+                {fieldError?.field === "email" ? <p role="alert" className="text-xs font-medium text-destructive">{fieldError.message}</p> : null}
+              </motion.div>
+
+              <motion.div {...stagger(2)} className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <FieldIcon><Lock className="h-[18px] w-[18px]" /></FieldIcon>
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    aria-invalid={fieldError?.field === "password"}
+                    className="pr-12 pl-11"
+                  />
+                  <button
+                    type="button"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    className="absolute inset-y-1 right-1 flex w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring/30"
+                  >
+                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" aria-hidden /> : <Eye className="h-[18px] w-[18px]" aria-hidden />}
+                  </button>
+                </div>
+                {fieldError?.field === "password" ? <p role="alert" className="text-xs font-medium text-destructive">{fieldError.message}</p> : null}
+              </motion.div>
+
+              <AnimatePresence>
+                {formError ? (
+                  <motion.p
+                    key="form-error"
+                    role="alert"
+                    initial={reduced ? false : { opacity: 0, y: -6, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive"
+                  >
+                    {formError}
+                  </motion.p>
+                ) : null}
+              </AnimatePresence>
+
+              <motion.div {...stagger(3)} className="pt-2">
+                <Button type="submit" size="lg" disabled={busy || status === "unconfigured"} className="w-full">
+                  {busy ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}
+                  {mode === "signin" ? "Sign in" : "Create account"}
+                </Button>
+              </motion.div>
+            </form>
+
+            {status === "unconfigured" ? (
+              <p role="alert" className="mt-4 rounded-2xl bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground">
+                Backend isn&apos;t connected yet — add your Firebase keys to .env.local and restart.
+              </p>
+            ) : null}
+          </div>
+        </motion.div>
       </main>
-      {arrivalPhase !== "idle" ? <BrandArrival phase={arrivalPhase} reduced={reduced} /> : null}
     </div>
   );
 }
