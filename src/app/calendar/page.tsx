@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ListChecks, Plus } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -17,7 +18,7 @@ import {
   type EventTask,
   type PlannerEvent,
 } from "@/lib/data";
-import { daysUntil, formatCountdown, formatDayMonth, formatLongDate, formatTime, startOfWeek, toIso, todayIso } from "@/lib/datetime";
+import { daysUntil, formatCountdown, formatDayMonth, formatLongDate, formatTime, parseIso, startOfWeek, toIso, todayIso } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -48,8 +49,11 @@ function CalendarContent() {
   const { user, status, signOut } = useAuth();
   const queryClient = useQueryClient();
   const uid = user?.uid;
-  const [anchor, setAnchor] = useState(() => new Date());
-  const [selected, setSelected] = useState(todayIso());
+  // Reminder notifications link here with ?date=YYYY-MM-DD.
+  const requestedDate = useSearchParams().get("date") ?? "";
+  const deepLinkDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : null;
+  const [anchor, setAnchor] = useState(() => (deepLinkDate ? parseIso(deepLinkDate) : new Date()));
+  const [selected, setSelected] = useState(deepLinkDate ?? todayIso());
   const [actionError, setActionError] = useState<string | null>(null);
   const week = useMemo(() => buildWeek(anchor), [anchor]);
 
@@ -261,7 +265,9 @@ function CalendarContent() {
 export default function CalendarPage() {
   return (
     <RequireAuth>
-      <CalendarContent />
+      <Suspense fallback={null}>
+        <CalendarContent />
+      </Suspense>
     </RequireAuth>
   );
 }

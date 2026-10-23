@@ -59,6 +59,9 @@ const SCOPES: Array<{ key: Scope; label: string }> = [
   { key: "personal", label: "Personal tasks" },
 ];
 
+const taskKey = (task: { eventId?: string | null; id: string }) =>
+  `${task.eventId ?? "personal"}-${task.id}`;
+
 function matchesFilter(
   task: Omit<EventTask, "eventId"> & { eventId?: string | null; eventTitle?: string },
   filter: Filter,
@@ -369,16 +372,17 @@ function TasksContent() {
   const requestedDate = searchParams.get("date") ?? "";
   const requestedEventId = searchParams.get("event") ?? "";
   const uid = user?.uid;
-  const [filter, setFilter] = useState<Filter>("open");
+  // Reminder notifications link here with ?focusTask=<id>[&event=<id>].
+  const focusTaskId = searchParams.get("focusTask") ?? "";
+  const [filterChoice, setFilter] = useState<Filter | null>(null);
   const [scope, setScope] = useState<Scope>("all");
   const [sheetOpen, setSheetOpen] = useState(searchParams.get("new") === "1");
-  const [pendingDelete, setPendingDelete] = useState<TaskRow | null>(null);
+  const [highlightExpired, setHighlightExpired] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const deleteTimer = useRef<number | null>(null);
-
-  useEffect(() => () => {
-    if (deleteTimer.current) window.clearTimeout(deleteTimer.current);
-  }, []);
+  // Deletes wait 5s so they can be undone. Each one keeps its own timer; the
+  // Map is the source of truth, `pendingDeletes` mirrors it for rendering.
+  const pendingRef = useRef(new Map<string, { row: TaskRow; timer: number }>());
+  const [pendingDeletes, setPendingDeletes] = useState<TaskRow[]>([]);
 
   const combined = useQuery({
     queryKey: ["all-tasks", uid],
@@ -425,44 +429,94 @@ function TasksContent() {
       void queryClient.invalidateQueries({ queryKey: ["calendar", uid] });
     },
   });
-  const remove = useMutation({
-    mutationFn: ({ eventId, taskId }: { eventId: string | null; taskId: string }) =>
-      eventId ? deleteTask(eventId, taskId) : deleteStandaloneTask(uid!, taskId),
-    onSuccess: () => {
+  const commitDelete = async (row: TaskRow) => {
+    try {
+      if (row.eventId) await deleteTask(row.eventId, row.id);
+      else await deleteStandaloneTask(uid!, row.id);
       void queryClient.invalidateQueries({ queryKey: ["all-tasks", uid] });
       void queryClient.invalidateQueries({ queryKey: ["standalone-tasks", uid] });
       void queryClient.invalidateQueries({ queryKey: ["calendar", uid] });
-    },
-    onError: (error) => setActionError(error instanceof Error ? `Couldn’t delete that task: ${error.message}` : "Couldn’t delete that task."),
-    onSettled: () => setPendingDelete(null),
+    } catch (error) {
+      setActionError(error instanceof Error ? `Couldn’t delete that task: ${error.message}` : "Couldn’t delete that task.");
+    } finally {
+      setPendingDeletes((current) => current.filter((pending) => taskKey(pending) !== taskKey(row)));
+    }
+  };
+  // The unmount/pagehide flush below must call the latest closure.
+  const commitDeleteRef = useRef(commitDelete);
+  useEffect(() => {
+    commitDeleteRef.current = commitDelete;
   });
 
+  // Leaving the screen (or hiding the app) must not silently drop deletes the
+  // user already saw confirmed, so flush whatever is still waiting.
+  useEffect(() => {
+    const pending = pendingRef.current;
+    const flush = () => {
+      for (const { row, timer } of pending.values()) {
+        window.clearTimeout(timer);
+        void commitDeleteRef.current(row);
+      }
+      pending.clear();
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
+
   const requestDelete = (row: TaskRow) => {
+    const key = taskKey(row);
+    if (pendingRef.current.has(key)) return;
     setActionError(null);
-    setPendingDelete(row);
-    deleteTimer.current = window.setTimeout(() => {
-      remove.mutate({ eventId: row.eventId, taskId: row.id });
+    const timer = window.setTimeout(() => {
+      pendingRef.current.delete(key);
+      void commitDeleteRef.current(row);
     }, 5_000);
+    pendingRef.current.set(key, { row, timer });
+    setPendingDeletes((current) => [...current, row]);
   };
 
+  // Undo applies to the most recent delete still inside its 5s window.
   const undoDelete = () => {
-    if (deleteTimer.current) window.clearTimeout(deleteTimer.current);
-    deleteTimer.current = null;
-    setPendingDelete(null);
+    const last = [...pendingRef.current.entries()].pop();
+    if (!last) return;
+    const [key, { row, timer }] = last;
+    window.clearTimeout(timer);
+    pendingRef.current.delete(key);
+    setPendingDeletes((current) => current.filter((pending) => taskKey(pending) !== taskKey(row)));
   };
 
   const taskRows = useMemo(
     () => mergeTaskRows(combined.data ?? [], standalone.data ?? []),
     [combined.data, standalone.data],
   );
+  const focusRow = useMemo(
+    () =>
+      focusTaskId
+        ? taskRows.find((task) => task.id === focusTaskId && (!requestedEventId || (task.eventId ?? "") === requestedEventId))
+        : undefined,
+    [taskRows, focusTaskId, requestedEventId],
+  );
+  const focusRowId = focusRow?.id;
+  // A linked task may already be done; show the list it actually lives in.
+  const filter: Filter = filterChoice ?? (focusRow?.done ? "done" : "open");
+
+  useEffect(() => {
+    if (!focusRowId) return;
+    document.getElementById(`task-${focusRowId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const timer = window.setTimeout(() => setHighlightExpired(true), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [focusRowId]);
   const scopedTasks = useMemo(
     () => taskRows.filter((task) => scope === "all" || (scope === "events" ? Boolean(task.eventId) : !task.eventId)),
     [taskRows, scope],
   );
   const groupedEntries = useMemo(() => {
+    const hidden = new Set(pendingDeletes.map(taskKey));
     const visible = scopedTasks.filter((task) =>
-      matchesFilter(task, filter) &&
-      !(pendingDelete?.id === task.id && pendingDelete.eventId === task.eventId),
+      matchesFilter(task, filter) && !hidden.has(taskKey(task)),
     );
     const byDate: Record<string, TaskRow[]> = {};
     for (const task of [...visible].sort((a, b) =>
@@ -473,7 +527,7 @@ function TasksContent() {
       (byDate[task.dueDate] ??= []).push(task);
     }
     return Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b));
-  }, [scopedTasks, filter, pendingDelete]);
+  }, [scopedTasks, filter, pendingDeletes]);
 
   const events = useMemo(() => (combined.data ?? []).map((pair) => pair.event), [combined.data]);
 
@@ -636,11 +690,16 @@ function TasksContent() {
                           const overdue = !row.done && row.dueDate < todayIso();
                           return (
                             <motion.li
-                              key={`${row.eventId ?? "personal"}-${row.id}`}
+                              key={taskKey(row)}
+                              id={`task-${row.id}`}
                               layout
                               initial={{ opacity: 0, y: 8 }}
                               animate={{ opacity: 1, y: 0, transition: springs.rise }}
-                              className={cn("flex items-center gap-3 py-4", row.done && "opacity-55")}
+                              className={cn(
+                                "flex items-center gap-3 py-4 transition-colors",
+                                row.done && "opacity-55",
+                                focusRowId === row.id && !highlightExpired && "-mx-2 rounded-md bg-secondary/60 px-2",
+                              )}
                             >
                               <AnimatedCheck
                                 done={row.done}
@@ -680,9 +739,9 @@ function TasksContent() {
         )}
       </div>
 
-      {pendingDelete ? (
+      {pendingDeletes.length > 0 ? (
         <div role="status" className="fixed inset-x-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-[60] mx-auto flex max-w-sm items-center justify-between gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm shadow-lg">
-          <span>Task deleted</span>
+          <span>{pendingDeletes.length > 1 ? `${pendingDeletes.length} tasks deleted` : "Task deleted"}</span>
           <button type="button" onClick={undoDelete} className="min-h-9 font-semibold text-primary underline-offset-4 hover:underline">Undo</button>
         </div>
       ) : actionError ? (

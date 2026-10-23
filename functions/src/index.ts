@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/logger";
 import { defineSecret } from "firebase-functions/params";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -7,6 +7,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { DateTime } from "luxon";
 import webpush from "web-push";
+import { isAllowedPushEndpoint } from "./push-endpoint.js";
 
 const REGION = "us-central1";
 const DATABASE_ID = "petal-db";
@@ -168,6 +169,11 @@ async function sendToUser(ownerUid: string, payload: object) {
   let delivered = 0;
   await Promise.all(subscriptions.docs.map(async (subscription) => {
     const data = subscription.data() as StoredPushSubscription;
+    if (!isAllowedPushEndpoint(data.endpoint)) {
+      logger.warn("Removing push subscription with a disallowed endpoint", { ownerUid, subscriptionId: subscription.id });
+      await subscription.ref.delete();
+      return;
+    }
     try {
       await webpush.sendNotification(data, JSON.stringify(payload));
       delivered += 1;
@@ -182,6 +188,26 @@ async function sendToUser(ownerUid: string, payload: object) {
   return delivered;
 }
 
+// A job is claimed as "sending" before delivery. If the function dies after
+// the claim, the job would stay there forever, so hand old claims back to the
+// dispatcher. Delivery is at-least-once: a crash after the push went out but
+// before the "sent" write can produce one duplicate notification.
+const STALE_CLAIM_MS = 5 * 60 * 1000;
+
+async function requeueStaleJobs(now: Timestamp) {
+  const sending = await db.collection("reminderJobs").where("status", "==", "sending").limit(50).get();
+  await Promise.all(sending.docs.map((candidate) =>
+    db.runTransaction(async (transaction) => {
+      const current = await transaction.get(candidate.ref);
+      const claimedAt = current.get("claimedAt") as Timestamp | undefined;
+      if (current.get("status") !== "sending") return;
+      if (claimedAt && now.toMillis() - claimedAt.toMillis() < STALE_CLAIM_MS) return;
+      logger.warn("Requeueing stale reminder job", { jobId: candidate.id });
+      transaction.update(candidate.ref, { status: "pending", claimedAt: FieldValue.delete() });
+    }),
+  ));
+}
+
 export const dispatchDueReminders = onSchedule(
   {
     schedule: "every 1 minutes",
@@ -191,6 +217,7 @@ export const dispatchDueReminders = onSchedule(
   },
   async () => {
     const now = Timestamp.now();
+    await requeueStaleJobs(now);
     const dueJobs = await db.collection("reminderJobs")
       .where("status", "==", "pending")
       .where("scheduledFor", "<=", now)
