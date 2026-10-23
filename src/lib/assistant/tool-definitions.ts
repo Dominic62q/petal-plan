@@ -117,6 +117,42 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "update_event",
+      description:
+        "Change an event's title, date, time, status or reminder. Pass only the fields to change; the rest stay as they are. Only when the user asked for it.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string" },
+          title: { type: "string" },
+          date,
+          time,
+          status: { type: "string", enum: ["planning", "confirmed"] },
+          reminderMinutes: reminder,
+          clearReminder: { type: "boolean", description: "true to remove the event's reminder" },
+        },
+        required: ["eventId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_event",
+      description:
+        "Permanently delete an event together with all of its tasks and schedule entries. Only when the user clearly asked. The app shows the user a confirmation first; if they decline, nothing is deleted.",
+      parameters: {
+        type: "object",
+        properties: { eventId: { type: "string" } },
+        required: ["eventId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_task",
       description: "Add a task. Only when the user asked for it. Omit eventId for a personal task. Returns the new task.",
       parameters: {

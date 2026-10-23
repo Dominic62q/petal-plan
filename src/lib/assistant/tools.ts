@@ -6,6 +6,7 @@ import {
   createScheduleEntry,
   createStandaloneTask,
   createTask,
+  deleteEvent,
   deleteStandaloneTask,
   deleteTask,
   getUserProfile,
@@ -15,7 +16,9 @@ import {
   listTasks,
   setStandaloneTaskDone,
   setTaskDone,
+  updateEvent,
   updateScheduleEntry,
+  type EventChanges,
   type EventTask,
   type PlannerEvent,
   type ScheduleKind,
@@ -61,6 +64,8 @@ export const TOOL_LABELS: Record<string, string> = {
   list_tasks: "Looking through your tasks",
   list_schedule: "Reading an event schedule",
   create_event: "Creating an event",
+  update_event: "Updating an event",
+  delete_event: "Waiting for your OK to delete",
   create_task: "Adding a task",
   set_task_done: "Updating a task",
   delete_task: "Waiting for your OK to delete",
@@ -296,6 +301,62 @@ export function createToolRunner({
       });
       await refresh();
       return { ok: true, summary: `Created event “${title}”`, event: { id, title, date, time, status } };
+    },
+
+    async update_event(args) {
+      const { event } = await findEvent(asString(args.eventId));
+      const changes: EventChanges = {};
+      if (args.title !== undefined) {
+        const title = asString(args.title).slice(0, 120);
+        if (!title) throw new Error("title can't be empty");
+        changes.title = title;
+      }
+      if (args.date !== undefined) changes.date = requireDate(args.date, "date");
+      if (args.time !== undefined) {
+        changes.time = requireTime(args.time, "time");
+        changes.timeZone = currentTimeZone();
+      }
+      if (args.status !== undefined) {
+        const status = asString(args.status);
+        if (status !== "planning" && status !== "confirmed") throw new Error("status must be planning or confirmed");
+        changes.status = status;
+      }
+      if (args.clearReminder === true) {
+        changes.reminderOffsetMinutes = null;
+      } else {
+        const reminder = reminderFrom(args.reminderMinutes, true);
+        if ("reminderOffsetMinutes" in reminder) changes.reminderOffsetMinutes = reminder.reminderOffsetMinutes;
+      }
+      if (Object.keys(changes).length === 0) throw new Error("Nothing to change: pass at least one field");
+
+      await updateEvent(event.id, changes);
+      await refresh();
+      const next = { ...event, ...changes };
+      return {
+        ok: true,
+        summary: `Updated “${next.title}”`,
+        event: { id: event.id, title: next.title, date: next.date, time: next.time || null, status: next.status },
+      };
+    },
+
+    async delete_event(args) {
+      const { event, tasks } = await findEvent(asString(args.eventId));
+      if (!confirm) throw new Error("Deleting isn't available here");
+
+      const entries = await listSchedule(event.id);
+      const parts = [
+        tasks.length ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}` : "",
+        entries.length ? `${entries.length} schedule ${entries.length === 1 ? "entry" : "entries"}` : "",
+      ].filter(Boolean);
+      const alongWith = parts.length ? ` and its ${parts.join(" and ")}` : "";
+
+      // The user decides, not the model: nothing is deleted until they approve.
+      const approved = await confirm(`Delete the event “${event.title}”${alongWith}? This can't be undone.`);
+      if (!approved) return { ok: false, deleted: false, note: "The user chose not to delete it. Nothing was changed." };
+
+      await deleteEvent(event.id);
+      await refresh();
+      return { ok: true, deleted: true, summary: `Deleted the event “${event.title}”${alongWith}` };
     },
 
     async create_task(args) {

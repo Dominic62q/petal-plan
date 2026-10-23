@@ -7,6 +7,7 @@ const data = vi.hoisted(() => ({
   createScheduleEntry: vi.fn(),
   createStandaloneTask: vi.fn(),
   createTask: vi.fn(),
+  deleteEvent: vi.fn(),
   deleteStandaloneTask: vi.fn(),
   deleteTask: vi.fn(),
   getUserProfile: vi.fn(),
@@ -16,6 +17,7 @@ const data = vi.hoisted(() => ({
   listTasks: vi.fn(),
   setStandaloneTaskDone: vi.fn(),
   setTaskDone: vi.fn(),
+  updateEvent: vi.fn(),
   updateScheduleEntry: vi.fn(),
 }));
 
@@ -99,6 +101,40 @@ describe("assistant tools", () => {
       endAt: "16:30",
       location: "Hall",
     });
+  });
+
+  it("changes only the given fields of an event", async () => {
+    const result = await runner().run("update_event", { eventId: "ev1", date: "2026-05-08", status: "confirmed" });
+    expect(data.updateEvent).toHaveBeenCalledWith("ev1", { date: "2026-05-08", status: "confirmed" });
+    expect(describeAction(result)).toBe("Updated “Spring gala”");
+  });
+
+  it("clears an event's reminder, and rejects an empty or invalid change", async () => {
+    await runner().run("update_event", { eventId: "ev1", clearReminder: true });
+    expect(data.updateEvent).toHaveBeenCalledWith("ev1", { reminderOffsetMinutes: null });
+
+    data.updateEvent.mockClear();
+    const tools = runner();
+    await expect(tools.run("update_event", { eventId: "ev1" })).rejects.toThrow(/Nothing to change/);
+    await expect(tools.run("update_event", { eventId: "ev1", time: "6pm" })).rejects.toThrow(/time/);
+    await expect(tools.run("update_event", { eventId: "ev1", title: "  " })).rejects.toThrow(/title/);
+    await expect(tools.run("update_event", { eventId: "nope", title: "x" })).rejects.toThrow(/No event/);
+    expect(data.updateEvent).not.toHaveBeenCalled();
+  });
+
+  it("deletes an event only after the user approves, naming what goes with it", async () => {
+    const confirm = vi.fn().mockResolvedValue(true);
+    const result = await runner(confirm).run("delete_event", { eventId: "ev1" });
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/Spring gala.*1 task and 1 schedule entry/));
+    expect(data.deleteEvent).toHaveBeenCalledWith("ev1");
+    expect(describeAction(result)).toContain("Deleted the event “Spring gala”");
+  });
+
+  it("keeps the event when the user declines, or when there is nobody to ask", async () => {
+    const declined = await runner(vi.fn().mockResolvedValue(false)).run("delete_event", { eventId: "ev1" });
+    expect(describeAction(declined)).toBeNull();
+    await expect(runner().run("delete_event", { eventId: "ev1" })).rejects.toThrow();
+    expect(data.deleteEvent).not.toHaveBeenCalled();
   });
 
   it("reads one event with its tasks and schedule", async () => {

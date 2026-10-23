@@ -10,6 +10,7 @@ import {
   query,
   where,
   serverTimestamp,
+  deleteField,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -164,6 +165,45 @@ export async function createEvent(
     createdAt: serverTimestamp(),
   });
   return eventReference.id;
+}
+
+export type EventChanges = Partial<Pick<PlannerEvent, "title" | "date" | "time" | "status" | "timeZone">> & {
+  /** `null` clears the reminder. */
+  reminderOffsetMinutes?: number | null;
+};
+
+export async function updateEvent(
+  eventId: string,
+  changes: EventChanges,
+): Promise<void> {
+  requireDb();
+  const { reminderOffsetMinutes, ...rest } = changes;
+  const update: Record<string, unknown> = { ...rest };
+  if (reminderOffsetMinutes === null) update.reminderOffsetMinutes = deleteField();
+  else if (reminderOffsetMinutes !== undefined) update.reminderOffsetMinutes = reminderOffsetMinutes;
+  for (const key of Object.keys(update)) if (update[key] === undefined) delete update[key];
+  if (Object.keys(update).length === 0) return;
+  await updateDoc(doc(db!, "events", eventId), update);
+}
+
+/**
+ * Deletes an event along with its tasks and schedule. Firestore does not
+ * cascade, and the rules check the parent event while deleting its children,
+ * so the children go first (a few at a time, to stay inside the rules' lookup
+ * limits) and the event document last. If it fails part-way the event is still
+ * there and the delete can simply be run again.
+ */
+export async function deleteEvent(eventId: string): Promise<void> {
+  requireDb();
+  const children = [
+    ...(await getDocs(tasksCollection(eventId))).docs,
+    ...(await getDocs(scheduleCollection(eventId))).docs,
+  ];
+  const CHUNK = 10;
+  for (let index = 0; index < children.length; index += CHUNK) {
+    await Promise.all(children.slice(index, index + CHUNK).map((entry) => deleteDoc(entry.ref)));
+  }
+  await deleteDoc(doc(db!, "events", eventId));
 }
 
 /**

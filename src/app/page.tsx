@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarDays, CalendarPlus, Check, CircleAlert, MessageCircle, Plus } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { EventActions } from "@/components/event-actions";
 import { RequireAuth } from "@/components/require-auth";
 import { AnimatedNumber, Reveal, TapScale, springs } from "@/components/motion-primitives";
 import { canvasButton, GroupHeading, ScreenShell } from "@/components/page-header";
@@ -321,6 +322,7 @@ function DashboardContent() {
   // A filter pointing at a since-deleted event falls back to "all".
   const activeFilter = eventFilter === "all" || pairs.some((pair) => pair.event.id === eventFilter) ? eventFilter : "all";
   const filteredPairs = activeFilter === "all" ? pairs : pairs.filter((pair) => pair.event.id === activeFilter);
+  const selectedPair = activeFilter === "all" ? null : filteredPairs[0] ?? null;
   const model = buildAgenda(filteredPairs, activeFilter === "all" ? standalone.data ?? [] : []);
   const firstName = (user?.displayName || "there").split(" ")[0];
   const initial = (user?.displayName || user?.email || "P").charAt(0).toUpperCase();
@@ -372,6 +374,15 @@ function DashboardContent() {
       ) : (
         <>
           {pairs.length > 0 ? <EventRail pairs={pairs} value={activeFilter} onChange={setEventFilter} /> : null}
+          {selectedPair && user ? (
+            <EventActions
+              key={selectedPair.event.id}
+              uid={user.uid}
+              event={selectedPair.event}
+              taskCount={selectedPair.tasks.length}
+              onDeleted={() => setEventFilter("all")}
+            />
+          ) : null}
 
           {model.overdue.length > 0 ? (
             <section aria-label="Needs attention">
