@@ -1,9 +1,11 @@
 import { cert, getApp, getApps, initializeApp, type App } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
 // Same database id as src/lib/firebase.ts.
 const FIRESTORE_DATABASE_ID = "petal-db";
+
+// Only app and firestore are imported on purpose: firebase-admin/auth drags in
+// an ESM-only dependency that fails to load on Vercel (see lib/server/auth.ts).
 
 function readServiceAccount(): Record<string, unknown> | null {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT?.trim();
@@ -22,5 +24,4 @@ function adminApp(): App {
   return initializeApp({ credential: cert(account as Parameters<typeof cert>[0]) });
 }
 
-export const adminAuth = () => getAuth(adminApp());
 export const adminDb = () => getFirestore(adminApp(), FIRESTORE_DATABASE_ID);
