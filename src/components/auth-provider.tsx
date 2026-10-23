@@ -24,6 +24,8 @@ interface AuthContextValue {
     password: string,
   ) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Saves a new display name to the sign-in account and to the profile document. */
+  updateDisplayName: (name: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -46,6 +48,9 @@ async function ensureUserProfile(user: User, displayName?: string): Promise<void
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authResolved, setAuthResolved] = useState(false);
+  // Firebase changes the name on the same User object, so React would not
+  // notice; bumping this makes everything that reads user.displayName re-render.
+  const [nameVersion, setNameVersion] = useState(0);
   const [status, setStatus] = useState<AuthStatus>(
     isFirebaseConfigured() ? "loading" : "unconfigured",
   );
@@ -96,8 +101,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!auth) throw new Error("Firebase is not configured");
         await firebaseSignOut(auth);
       },
+      async updateDisplayName(name) {
+        const current = auth?.currentUser;
+        if (!current || !db) throw new Error("You need to be signed in.");
+        const displayName = name.trim().replace(/\s+/g, " ");
+        if (!displayName) throw new Error("Enter a name.");
+        if (displayName.length > 40) throw new Error("Keep the name to 40 characters or fewer.");
+        await updateProfile(current, { displayName });
+        await setDoc(doc(db, "users", current.uid), { displayName }, { merge: true });
+        setNameVersion((version) => version + 1);
+      },
     }),
-    [status, user],
+    // nameVersion is not read inside; it re-publishes the context after a rename.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [status, user, nameVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

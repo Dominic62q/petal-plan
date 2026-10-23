@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { Bell, BellOff, CircleAlert, LoaderCircle, LogOut, Send, ShieldCheck } from "lucide-react";
+import { Bell, BellOff, CircleAlert, LoaderCircle, LogOut, Pencil, Send, ShieldCheck } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/components/auth-provider";
 import { BrandLogo } from "@/components/brand-logo";
 import { Stagger, StaggerItem, springs } from "@/components/motion-primitives";
@@ -26,8 +28,59 @@ import {
 } from "@/lib/push-notifications";
 import { cn } from "@/lib/utils";
 
+function NameForm({ initial, onSave, onDone }: { initial: string; onSave: (name: string) => Promise<void>; onDone: () => void }) {
+  const [name, setName] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState("");
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setProblem("");
+    try {
+      await onSave(name);
+      onDone();
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : "Could not save your name. Try again.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="grid gap-4">
+      <div className="space-y-2">
+        <Label htmlFor="display-name">Your name</Label>
+        <Input
+          id="display-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={40}
+          autoComplete="name"
+          autoFocus
+          className="h-12 text-base"
+        />
+      </div>
+      {problem ? (
+        <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+          {problem}
+        </p>
+      ) : null}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone} disabled={saving}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={saving}>
+          {saving ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : null}
+          Save name
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
 function ProfileContent() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, updateDisplayName } = useAuth();
+  const [nameOpen, setNameOpen] = useState(false);
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -210,6 +263,21 @@ function ProfileContent() {
               <span id="account-details-heading">Details</span>
             </GroupHeading>
             <dl className="divide-y divide-card overflow-hidden rounded-3xl bg-secondary/60">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <dt className="text-sm font-bold text-muted-foreground">Name</dt>
+                <dd className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate text-sm font-semibold">{user?.displayName || "Not set"}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setNameOpen(true)}
+                    aria-label="Edit your name"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden />
+                  </Button>
+                </dd>
+              </div>
               {detailRows.map(([label, value]) => (
                 <div key={label} className="flex items-center justify-between gap-4 px-4 py-4">
                   <dt className="text-sm font-bold text-muted-foreground">{label}</dt>
@@ -243,6 +311,16 @@ function ProfileContent() {
           </section>
         </StaggerItem>
       </Stagger>
+
+      <Dialog open={nameOpen} onOpenChange={setNameOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Your name</DialogTitle>
+            <DialogDescription>Used for your greeting and by the assistant.</DialogDescription>
+          </DialogHeader>
+          <NameForm initial={user?.displayName ?? ""} onSave={updateDisplayName} onDone={() => setNameOpen(false)} />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="max-w-sm">

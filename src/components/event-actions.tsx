@@ -28,7 +28,6 @@ const useRefreshEvents = (uid: string) => {
   return () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ["all-tasks", uid] }),
-      queryClient.invalidateQueries({ queryKey: ["calendar", uid] }),
     ]);
 };
 

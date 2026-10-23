@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarDays, CalendarPlus, Check, CircleAlert, MessageCircle, Plus } from "lucide-react";
@@ -13,9 +13,6 @@ import { canvasButton, GroupHeading, ScreenShell } from "@/components/page-heade
 import { ProgressRing } from "@/components/progress-ring";
 import { TaskItem } from "@/components/task-item";
 import {
-  listEvents,
-  listStandaloneTasks,
-  listTasks,
   setStandaloneTaskDone,
   setTaskDone,
   type EventTask,
@@ -31,6 +28,7 @@ import {
   todayIso,
 } from "@/lib/datetime";
 import { PRIORITY_ORDER } from "@/lib/labels";
+import { useEventPairs, useStandaloneTasks } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 interface RowTask extends Omit<EventTask, "eventId"> {
@@ -263,25 +261,8 @@ function DashboardContent() {
   const uid = user?.uid;
   const [eventFilter, setEventFilter] = useState<string>("all");
 
-  const combined = useQuery({
-    queryKey: ["all-tasks", uid],
-    enabled: Boolean(uid),
-    queryFn: async () => {
-      const events = await listEvents(uid!);
-      return Promise.all(
-        events.map(async (event) => ({
-          event,
-          tasks: await listTasks(event.id),
-        })),
-      );
-    },
-  });
-
-  const standalone = useQuery({
-    queryKey: ["standalone-tasks", uid],
-    enabled: Boolean(uid),
-    queryFn: () => listStandaloneTasks(uid!),
-  });
+  const combined = useEventPairs(uid);
+  const standalone = useStandaloneTasks(uid);
 
   const checkOff = useMutation({
     mutationFn: ({ eventId, taskId, done }: { eventId: string | null; taskId: string; done: boolean }) =>

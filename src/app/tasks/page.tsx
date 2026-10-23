@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { CircleAlert, ClipboardList, ListChecks, LoaderCircle, Plus } from "lucide-react";
@@ -30,9 +30,6 @@ import {
   createTask,
   deleteStandaloneTask,
   deleteTask,
-  listEvents,
-  listStandaloneTasks,
-  listTasks,
   setStandaloneTaskDone,
   setTaskDone,
   type EventTask,
@@ -43,6 +40,7 @@ import { mergeTaskRows, summarizeTasks, type TaskRow } from "@/lib/task-model";
 import { formatCountdown, formatLongDate, todayIso } from "@/lib/datetime";
 import { currentTimeZone, parseReminderOffset, REMINDER_OPTIONS, type ReminderOptionValue } from "@/lib/reminders";
 import { PRIORITY_ORDER } from "@/lib/labels";
+import { useEventPairs, useStandaloneTasks } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 type Filter = "open" | "due" | "overdue" | "done";
@@ -143,7 +141,6 @@ function NewTaskSheet({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["all-tasks", user?.uid] });
       void queryClient.invalidateQueries({ queryKey: ["standalone-tasks", user?.uid] });
-      void queryClient.invalidateQueries({ queryKey: ["calendar", user?.uid] });
       setTitle("");
       setGroup("");
       setDueDate(defaultDueDate || todayIso());
@@ -333,23 +330,8 @@ function TasksContent() {
   const pendingRef = useRef(new Map<string, { row: TaskRow; timer: number }>());
   const [pendingDeletes, setPendingDeletes] = useState<TaskRow[]>([]);
 
-  const combined = useQuery({
-    queryKey: ["all-tasks", uid],
-    enabled: Boolean(uid),
-    queryFn: async () => {
-      const events = await listEvents(uid!);
-      const pairs = await Promise.all(
-        events.map(async (event) => ({ event, tasks: await listTasks(event.id) })),
-      );
-      return pairs;
-    },
-  });
-
-  const standalone = useQuery({
-    queryKey: ["standalone-tasks", uid],
-    enabled: Boolean(uid),
-    queryFn: () => listStandaloneTasks(uid!),
-  });
+  const combined = useEventPairs(uid);
+  const standalone = useStandaloneTasks(uid);
 
   // Toggle routes to the right store based on whether the task has an event.
   const toggle = useMutation({
@@ -375,7 +357,6 @@ function TasksContent() {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["all-tasks", uid] });
       void queryClient.invalidateQueries({ queryKey: ["standalone-tasks", uid] });
-      void queryClient.invalidateQueries({ queryKey: ["calendar", uid] });
     },
   });
   const commitDelete = async (row: TaskRow) => {
@@ -384,7 +365,6 @@ function TasksContent() {
       else await deleteStandaloneTask(uid!, row.id);
       void queryClient.invalidateQueries({ queryKey: ["all-tasks", uid] });
       void queryClient.invalidateQueries({ queryKey: ["standalone-tasks", uid] });
-      void queryClient.invalidateQueries({ queryKey: ["calendar", uid] });
     } catch (error) {
       setActionError(error instanceof Error ? `Couldn’t delete that task: ${error.message}` : "Couldn’t delete that task.");
     } finally {

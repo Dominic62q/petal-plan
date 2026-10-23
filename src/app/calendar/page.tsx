@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
@@ -12,14 +12,12 @@ import { Reveal, TapScale, springs } from "@/components/motion-primitives";
 import { canvasButton, GroupHeading, ScreenShell } from "@/components/page-header";
 import { TaskItem } from "@/components/task-item";
 import {
-  listEvents,
-  listStandaloneTasks,
-  listTasks,
   setStandaloneTaskDone,
   setTaskDone,
   type EventTask,
   type PlannerEvent,
 } from "@/lib/data";
+import { useEventPairs, useStandaloneTasks } from "@/lib/queries";
 import { daysUntil, formatCountdown, formatDayMonth, formatLongDate, formatTime, parseIso, startOfWeek, toIso, todayIso } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
@@ -62,21 +60,20 @@ function CalendarContent() {
   const [direction, setDirection] = useState<1 | -1>(1);
   const week = useMemo(() => buildWeek(anchor), [anchor]);
 
-  const calendarQuery = useQuery({
-    queryKey: ["calendar", uid],
-    enabled: Boolean(uid),
-    queryFn: async () => {
-      const events = await listEvents(uid!);
-      const perEvent = await Promise.all(
-        events.map(async (event) => ({
-          event,
-          tasks: await listTasks(event.id),
-        })),
-      );
-      const standalone = await listStandaloneTasks(uid!);
-      return { events, perEvent, standalone };
-    },
-  });
+  // The same two reads as Today and Tasks, so the calendar opens from cache
+  // when another screen has already loaded them.
+  const pairsQuery = useEventPairs(uid);
+  const personalQuery = useStandaloneTasks(uid);
+  const queryError = pairsQuery.error ?? personalQuery.error;
+  const calendarQuery = {
+    isPending: pairsQuery.isPending || personalQuery.isPending,
+    isError: pairsQuery.isError || personalQuery.isError,
+    error: queryError,
+    refetch: () => Promise.all([pairsQuery.refetch(), personalQuery.refetch()]),
+  };
+  const pairs = pairsQuery.data;
+  const standaloneTasks = personalQuery.data;
+  const calendarEvents = useMemo(() => pairs?.map(({ event }) => event) ?? [], [pairs]);
 
   // Firestore reports a rejected request as code "permission-denied". That can
   // mean an expired session, but also a rules problem, so check the session
@@ -92,37 +89,42 @@ function CalendarContent() {
     sessionCheckStarted.current = true;
     user
       .getIdToken(true)
-      .then(() => queryClient.invalidateQueries({ queryKey: ["calendar", user.uid] }))
+      .then(() =>
+        Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["all-tasks", user.uid] }),
+          queryClient.invalidateQueries({ queryKey: ["standalone-tasks", user.uid] }),
+        ]),
+      )
       .catch(() => signOut())
       .finally(() => setSessionCheck("done"));
   }, [permissionDenied, queryClient, signOut, status, user]);
 
   const eventsByDay = useMemo(() => {
     const byDay: Record<string, PlannerEvent[]> = {};
-    for (const event of calendarQuery.data?.events ?? []) {
+    for (const event of calendarEvents) {
       (byDay[event.date] ??= []).push(event);
     }
     for (const events of Object.values(byDay)) {
       events.sort((a, b) => a.time.localeCompare(b.time));
     }
     return byDay;
-  }, [calendarQuery.data?.events]);
+  }, [calendarEvents]);
 
   const tasksByDay = useMemo(() => {
     const byDay: Record<string, CalendarTask[]> = {};
-    for (const { event, tasks } of calendarQuery.data?.perEvent ?? []) {
+    for (const { event, tasks } of pairs ?? []) {
       for (const task of tasks) {
         (byDay[task.dueDate] ??= []).push({ ...task, eventTitle: event.title, group: task.group || "General" });
       }
     }
-    for (const task of calendarQuery.data?.standalone ?? []) {
+    for (const task of standaloneTasks ?? []) {
       (byDay[task.dueDate] ??= []).push({ ...task, eventId: null, eventTitle: "Personal", group: "Personal" });
     }
     for (const tasks of Object.values(byDay)) {
       tasks.sort((a, b) => (a.dueTime ?? "").localeCompare(b.dueTime ?? "") || Number(a.done) - Number(b.done) || PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.title.localeCompare(b.title));
     }
     return byDay;
-  }, [calendarQuery.data?.perEvent, calendarQuery.data?.standalone]);
+  }, [pairs, standaloneTasks]);
 
   const selectedIsValid = week.some((column) => column.isoDate === selected);
   const activeDay = selectedIsValid ? selected : week.find((column) => column.isToday)?.isoDate ?? week[0].isoDate;
@@ -133,7 +135,6 @@ function CalendarContent() {
     mutationFn: ({ eventId, taskId, done }: { eventId: string | null; taskId: string; done: boolean }) =>
       eventId ? setTaskDone(eventId, taskId, done) : setStandaloneTaskDone(uid!, taskId, done),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["calendar", uid] });
       void queryClient.invalidateQueries({ queryKey: ["all-tasks", uid] });
       void queryClient.invalidateQueries({ queryKey: ["standalone-tasks", uid] });
       setActionError(null);
@@ -200,7 +201,7 @@ function CalendarContent() {
     setSelected(isoDate);
   };
 
-  const allEvents = (calendarQuery.data?.events ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  const allEvents = calendarEvents.slice().sort((a, b) => a.date.localeCompare(b.date));
   const todayInWeek = week.some((column) => column.isToday);
   const monthLabel = parseIso(week[3].isoDate).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
   const overdueFor = (task: CalendarTask) => !task.done && task.dueDate < todayIso();

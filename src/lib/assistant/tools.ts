@@ -10,22 +10,18 @@ import {
   deleteStandaloneTask,
   deleteTask,
   getUserProfile,
-  listEvents,
   listSchedule,
-  listStandaloneTasks,
-  listTasks,
   setStandaloneTaskDone,
   setTaskDone,
   updateEvent,
   updateScheduleEntry,
   type EventChanges,
-  type EventTask,
-  type PlannerEvent,
   type ScheduleKind,
   type StandaloneTask,
   type TaskPriority,
 } from "@/lib/data";
 import { todayIso } from "@/lib/datetime";
+import { eventPairsQuery, standaloneTasksQuery, type EventWithTasks } from "@/lib/queries";
 import { currentTimeZone } from "@/lib/reminders";
 
 /**
@@ -41,7 +37,7 @@ const PRIORITIES: readonly TaskPriority[] = ["high", "medium", "low"];
 const KINDS: readonly ScheduleKind[] = ["appointment", "slot"];
 const REMINDERS = [0, 10, 60, 1440];
 
-type Pair = { event: PlannerEvent; tasks: EventTask[] };
+type Pair = EventWithTasks;
 
 type TaskRow = {
   id: string;
@@ -118,22 +114,13 @@ export function createToolRunner({
 }): ToolRunner {
   // The same query keys as the Today screen, so the assistant reuses what is
   // already cached and a write there refreshes both.
-  const loadPairs = () =>
-    queryClient.fetchQuery({
-      queryKey: ["all-tasks", uid],
-      queryFn: async (): Promise<Pair[]> => {
-        const events = await listEvents(uid);
-        return Promise.all(events.map(async (event) => ({ event, tasks: await listTasks(event.id) })));
-      },
-    });
-  const loadPersonal = () =>
-    queryClient.fetchQuery({ queryKey: ["standalone-tasks", uid], queryFn: () => listStandaloneTasks(uid) });
+  const loadPairs = () => queryClient.fetchQuery(eventPairsQuery(uid));
+  const loadPersonal = () => queryClient.fetchQuery(standaloneTasksQuery(uid));
 
   const refresh = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ["all-tasks", uid] }),
       queryClient.invalidateQueries({ queryKey: ["standalone-tasks", uid] }),
-      queryClient.invalidateQueries({ queryKey: ["calendar", uid] }),
     ]);
 
   const rows = async (): Promise<TaskRow[]> => {
@@ -440,7 +427,6 @@ export function createToolRunner({
       if (endAt <= startAt) throw new Error("endAt must be after startAt");
       const location = asString(args.location).slice(0, 120);
       const id = await createScheduleEntry(event.id, { title, kind, date, startAt, endAt, location });
-      await queryClient.invalidateQueries({ queryKey: ["calendar", uid] });
       return { ok: true, summary: `Added “${title}” to ${event.title}`, entry: { id, title, kind, date, startAt, endAt, location } };
     },
 
@@ -463,7 +449,6 @@ export function createToolRunner({
       if (!next.title) throw new Error("title can't be empty");
       if (next.endAt <= next.startAt) throw new Error("endAt must be after startAt");
       await updateScheduleEntry(event.id, entryId, next);
-      await queryClient.invalidateQueries({ queryKey: ["calendar", uid] });
       return { ok: true, summary: `Updated “${next.title}”`, entry: { id: entryId, ...next } };
     },
 
